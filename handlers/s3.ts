@@ -5,10 +5,10 @@ import {
   ListObjectsCommand,
 } from "aws/client-s3/mod.ts";
 import { CONFIG } from "../util/config.ts";
+import { logger } from "../util/logger.ts";
 
 const BUCKET = "deno-uploads";
-
-console.log(CONFIG);
+const FILE_LIMIT = 30;
 
 const client = new S3Client({
   region: CONFIG.AWS_REGION,
@@ -26,6 +26,16 @@ export async function upload(ctx: RouterContext<string>) {
   if (body.type !== "form-data") {
     ctx.throw(400, "Wrong request type");
   }
+
+  const cmd = new ListObjectsCommand({
+    Bucket: BUCKET,
+  });
+  const { Contents } = await client.send(cmd);
+
+  if (Contents && Contents?.length > FILE_LIMIT) {
+    ctx.throw(400, `Daily file upload limit exceeded`);
+  }
+
   const val = body.value;
   for await (const [name, value] of val.stream()) {
     const cmd = new PutObjectCommand({
@@ -33,9 +43,11 @@ export async function upload(ctx: RouterContext<string>) {
       Bucket: BUCKET,
       Key: name,
     });
+    logger.info(`Uploading file: ${name}`);
     await client.send(cmd);
   }
   response.status = 200;
+  response.body = { message: "ok" };
 }
 
 export async function list(ctx: RouterContext<string>) {
