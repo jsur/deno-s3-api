@@ -4,6 +4,7 @@ import {
   PutObjectCommand,
   ListObjectsCommand,
 } from "aws/client-s3/mod.ts";
+import { getSignedUrl } from "aws-presign";
 import { CONFIG } from "../util/config.ts";
 import { logger } from "../util/logger.ts";
 
@@ -57,11 +58,34 @@ export async function list(ctx: RouterContext<string>) {
   });
   const { Contents } = await client.send(cmd);
 
-  if (!Contents) return [];
+  if (!Contents) {
+    response.body = [];
+    return;
+  }
 
   response.body = Contents.map((c) => ({
     key: c.Key,
     size: c.Size,
   }));
-  response.status = 200;
+}
+
+export function getObjectUrl(ctx: RouterContext<string>) {
+  const { request, response } = ctx;
+
+  const key = request.url.searchParams.get("key");
+
+  if (!key) {
+    ctx.throw(400, "Request does not have key param");
+  }
+
+  const url = getSignedUrl({
+    accessKeyId: CONFIG.AWS_ACCESS_KEY_ID,
+    secretAccessKey: CONFIG.AWS_SECRET_ACCESS_KEY,
+    bucket: BUCKET,
+    key,
+    region: CONFIG.AWS_REGION,
+    expiresIn: 1800,
+  });
+
+  response.body = { url };
 }
